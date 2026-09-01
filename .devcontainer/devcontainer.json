@@ -1,0 +1,19 @@
+{
+  "name": "Python 3.12",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bullseye",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true,
+        "telemetry.telemetryLevel": "off"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter"
+      ]
+    }
+  },
+  "postCreateCommand": "pip install --upgrade pip && curl -LsSf https://astral.sh/uv/install.sh | sh" 
+}
