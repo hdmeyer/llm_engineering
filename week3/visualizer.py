@@ -9,8 +9,8 @@ load_dotenv(override=True)
 
 
 class TokenPredictor:
-    def __init__(self, model_name: str):
-        self.client = OpenAI()
+    def __init__(self, model_name: str, client):
+        self.client = client
         self.messages = []
         self.predictions = []
         self.model_name = model_name
