@@ -31,7 +31,7 @@ vectorstore = Chroma(persist_directory=DB_NAME, embedding_function=embeddings)
 retriever = vectorstore.as_retriever()
 # llm = ChatOpenAI(temperature=0, model_name=MODEL)
 
-llm = ChatOllama(temperature=0, model_name=MODEL)
+llm = ChatOllama(temperature=0, model=MODEL)
 
 def fetch_context(question: str) -> list[Document]:
     """
