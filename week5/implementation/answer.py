@@ -6,7 +6,13 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.messages import SystemMessage, HumanMessage, convert_to_messages
 from langchain_core.documents import Document
 
+import os
+import glob
 from dotenv import load_dotenv
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.document_loaders import DirectoryLoader, TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 load_dotenv(override=True)
@@ -26,8 +32,36 @@ If you don't know the answer, say so.
 Context:
 {context}
 """
+folders = glob.glob("knowledge-base/*")
 
-vectorstore = Chroma(persist_directory=DB_NAME, embedding_function=embeddings)
+documents = []
+for folder in folders:
+    doc_type = os.path.basename(folder)
+    loader = DirectoryLoader(folder, glob="**/*.md", loader_cls=TextLoader, loader_kwargs={'encoding': 'utf-8'})
+    folder_docs = loader.load()
+    for doc in folder_docs:
+        doc.metadata["doc_type"] = doc_type
+        documents.append(doc)
+
+print(f"Loaded {len(documents)} documents")
+
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+chunks = text_splitter.split_documents(documents)
+
+print(f"Divided into {len(chunks)} chunks")
+print(f"First chunk:\n\n{chunks[0]}")
+
+# Pick an embedding model
+
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+#embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+if os.path.exists(DB_NAME):
+    Chroma(persist_directory=DB_NAME, embedding_function=embeddings).delete_collection()
+
+vectorstore = Chroma.from_documents(documents=chunks, embedding=embeddings, persist_directory=DB_NAME)
+print(f"Vectorstore created with {vectorstore._collection.count()} documents")
+
+#vectorstore = Chroma(persist_directory=DB_NAME, embedding_function=embeddings)
 retriever = vectorstore.as_retriever()
 # llm = ChatOpenAI(temperature=0, model_name=MODEL)
 
