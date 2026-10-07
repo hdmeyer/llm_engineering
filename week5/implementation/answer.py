@@ -1,6 +1,6 @@
 from pathlib import Path
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_ollama import ChatOlla
+from langchain_ollama import ChatOllama
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.messages import SystemMessage, HumanMessage, convert_to_messages
