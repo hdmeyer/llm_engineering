@@ -32,7 +32,7 @@ If you don't know the answer, say so.
 Context:
 {context}
 """
-folders = glob.glob("knowledge-base/*")
+folders = glob.glob("week5/knowledge-base/*")
 
 documents = []
 for folder in folders:
