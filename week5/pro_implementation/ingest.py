@@ -115,6 +115,7 @@ def create_chunks(documents):
     If you get a rate limit error, set the WORKERS to 1.
     """
     chunks = []
+    #Parallelize
     with Pool(processes=WORKERS) as pool:
         for result in tqdm(pool.imap_unordered(process_document, documents), total=len(documents)):
             chunks.extend(result)
