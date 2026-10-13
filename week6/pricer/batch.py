@@ -7,9 +7,7 @@ import pickle
 from tqdm.notebook import tqdm
 
 load_dotenv(override=True)
-groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-MODEL = "openai/gpt-oss-20b"
 BATCHES_FOLDER = "batches"
 OUTPUT_FOLDER = "output"
 state = Path("batches.pkl")
@@ -23,7 +21,10 @@ Details: 1 sentence on features"""
 
 
 class Batch:
+
+    MODEL = "openai/gpt-oss-20b"    
     BATCH_SIZE = 1_000
+    groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
     batches = []
 
@@ -91,6 +92,165 @@ class Batch:
         output_file = str(self.output / self.filename)
         response = groq.files.content(self.output_file_id)
         response.write_to_file(output_file)
+
+    def apply_output(self):
+        output_file = str(self.output / self.filename)
+        with open(output_file, "r", encoding="utf-8") as f:
+            for line in f:
+                json_line = json.loads(line)
+                id = int(json_line["custom_id"])
+                summary = json_line["response"]["body"]["choices"][0]["message"]["content"]
+                self.items[id].summary = summary
+        self.done = True
+
+    @classmethod
+    def create(cls, items, lite):
+        for start in range(0, len(items), cls.BATCH_SIZE):
+            end = min(start + cls.BATCH_SIZE, len(items))
+            batch = Batch(items, start, end, lite)
+            cls.batches.append(batch)
+        print(f"Created {len(cls.batches)} batches")
+
+    @classmethod
+    def run(cls):
+        for batch in tqdm(cls.batches):
+            batch.make_file()
+            batch.send_file()
+            batch.submit_batch()
+        print(f"Submitted {len(cls.batches)} batches")
+
+    @classmethod
+    def fetch(cls):
+        for batch in tqdm(cls.batches):
+            if not batch.done:
+                if batch.is_ready():
+                    batch.fetch_output()
+                    batch.apply_output()
+        finished = [batch for batch in cls.batches if batch.done]
+        print(f"Finished {len(finished)} of {len(cls.batches)} batches")
+
+    @classmethod
+    def save(cls):
+        items = cls.batches[0].items
+        for batch in cls.batches:
+            batch.items = None
+        with state.open("wb", encoding="utf-8") as f:
+            pickle.dump(cls.batches, f)
+        for batch in cls.batches:
+            batch.items = items
+        print(f"Saved {len(cls.batches)} batches")
+
+    @classmethod
+    def load(cls, items):
+        with state.open("rb", encoding="utf-8") as f:
+            cls.batches = pickle.load(f)
+        for batch in cls.batches:
+            batch.items = items
+        print(f"Loaded {len(cls.batches)} batches")
+
+
+from concurrent.futures import ThreadPoolExecutor
+from ollama import chat
+
+class BatchOllama:
+    MODEL = "llama3.2:1b"
+    MAX_WORKERS = 4
+    BATCH_SIZE = 100
+    
+    batches = []
+
+    def __init__(self, items, start, end, lite):
+        self.items = items
+        self.start = start
+        self.end = end
+        self.filename = f"{start}_{end}.jsonl"
+        self.file_id = None
+        self.batch_id = None
+        self.output_file_id = None
+        self.done = False
+        folder = Path("lite") if lite else Path("full")
+        self.batches = folder / BATCHES_FOLDER
+        self.output = folder / OUTPUT_FOLDER
+        self.batches.mkdir(parents=True, exist_ok=True)
+        self.output.mkdir(parents=True, exist_ok=True)
+
+    def process_item(self, item):
+        response = chat(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": item.full},
+            ],
+        )
+
+        summary = response["message"]["content"]
+
+        return {
+            "custom_id": str(item.id),
+            "response": {
+                "body": {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": summary
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    
+    def make_jsonl(self, item):
+        body = {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": item.full},
+            ],
+            "reasoning_effort": "low",
+        }
+        line = {
+            "custom_id": str(item.id),
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": body,
+        }
+        return json.dumps(line)
+
+    def make_file(self):
+        batch_file = self.batches / self.filename
+        with batch_file.open("w", encoding="utf-8") as f:
+            for item in self.items[self.start : self.end]:
+                f.write(self.make_jsonl(item))
+                f.write("\n")
+
+    def send_file(self):
+        self.results = []
+
+        batch_items = self.items[self.start : self.end]
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            self.results = list(
+                tqdm(
+                    executor.map(self.process_item, batch_items),
+                    total=len(batch_items),
+                    leave=False,
+                )
+            )
+
+    def submit_batch(self):
+        self.batch_id = "local"
+
+    def is_ready(self):
+        return True
+
+    def fetch_output(self):
+        output_file = self.output / self.filename
+
+        with output_file.open("w", encoding="utf-8") as f:
+            for result in self.results:
+                f.write(json.dumps(result))
+                f.write("\n")
 
     def apply_output(self):
         output_file = str(self.output / self.filename)
